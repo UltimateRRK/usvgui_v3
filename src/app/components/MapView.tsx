@@ -1,0 +1,266 @@
+import { useEffect, useRef } from "react";
+import L from "leaflet";
+import { MapPin, Trash2, Send, Navigation } from "lucide-react";
+import "leaflet/dist/leaflet.css";
+
+interface MapViewProps {
+  usvPosition: [number, number];
+  heading: number;
+  trail: [number, number][];
+  waypoints: [number, number][];
+  onAddWaypoint: (position: [number, number]) => void;
+  onClearWaypoints: () => void;
+  onSendWaypoints: () => void;
+  addWaypointMode: boolean;
+  setAddWaypointMode: (mode: boolean) => void;
+}
+
+export function MapView({
+  usvPosition,
+  heading,
+  trail,
+  waypoints,
+  onAddWaypoint,
+  onClearWaypoints,
+  onSendWaypoints,
+  addWaypointMode,
+  setAddWaypointMode,
+}: MapViewProps) {
+  const mapRef = useRef<L.Map | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const usvMarkerRef = useRef<L.Marker | null>(null);
+  const trailPolylineRef = useRef<L.Polyline | null>(null);
+  const waypointMarkersRef = useRef<L.Marker[]>([]);
+  const waypointPolylineRef = useRef<L.Polyline | null>(null);
+
+  // Initialize map
+  useEffect(() => {
+    if (!mapContainerRef.current || mapRef.current) return;
+
+    const map = L.map(mapContainerRef.current).setView(usvPosition, 15);
+    mapRef.current = map;
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    }).addTo(map);
+
+    // Handle map clicks for waypoint addition
+    map.on("click", (e: L.LeafletMouseEvent) => {
+      if (addWaypointMode) {
+        onAddWaypoint([e.latlng.lat, e.latlng.lng]);
+      }
+    });
+
+    return () => {
+      map.remove();
+      mapRef.current = null;
+    };
+  }, []);
+
+  // Update map click handler when addWaypointMode changes
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    mapRef.current.off("click");
+    mapRef.current.on("click", (e: L.LeafletMouseEvent) => {
+      if (addWaypointMode) {
+        onAddWaypoint([e.latlng.lat, e.latlng.lng]);
+      }
+    });
+  }, [addWaypointMode, onAddWaypoint]);
+
+  // Update USV marker
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    const boatIcon = L.divIcon({
+      html: `
+        <div style="transform: rotate(${heading}deg);">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M3 18L6 12L12 15L18 12L21 18M12 3V12M12 3L9 6M12 3L15 6" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+      `,
+      className: "boat-icon",
+      iconSize: [32, 32],
+      iconAnchor: [16, 16],
+    });
+
+    if (usvMarkerRef.current) {
+      usvMarkerRef.current.setLatLng(usvPosition);
+    } else {
+      const marker = L.marker(usvPosition, { icon: boatIcon })
+        .addTo(mapRef.current)
+        .bindPopup(`
+          <div class="text-sm">
+            <div class="flex items-center gap-2 mb-1">
+              <span style="font-weight: 600;">USV Current Position</span>
+            </div>
+            <div class="text-xs text-gray-600 font-mono">
+              ${usvPosition[0].toFixed(6)}°, ${usvPosition[1].toFixed(6)}°
+            </div>
+          </div>
+        `);
+      usvMarkerRef.current = marker;
+    }
+
+    // Center map on USV position
+    mapRef.current.setView(usvPosition, mapRef.current.getZoom());
+  }, [usvPosition, heading]);
+
+  // Update trail
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    if (trailPolylineRef.current) {
+      mapRef.current.removeLayer(trailPolylineRef.current);
+    }
+
+    if (trail.length > 1) {
+      const polyline = L.polyline(trail, {
+        color: "#3b82f6",
+        weight: 3,
+        opacity: 0.6,
+      }).addTo(mapRef.current);
+      trailPolylineRef.current = polyline;
+    }
+  }, [trail]);
+
+  // Update waypoints
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    // Remove old waypoint markers
+    waypointMarkersRef.current.forEach(marker => {
+      mapRef.current?.removeLayer(marker);
+    });
+    waypointMarkersRef.current = [];
+
+    // Remove old waypoint polyline
+    if (waypointPolylineRef.current) {
+      mapRef.current.removeLayer(waypointPolylineRef.current);
+      waypointPolylineRef.current = null;
+    }
+
+    // Add new waypoint markers
+    waypoints.forEach((waypoint, index) => {
+      const icon = L.divIcon({
+        html: `
+          <div style="background-color: #ef4444; color: white; border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">
+            ${index + 1}
+          </div>
+        `,
+        className: "waypoint-icon",
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+      });
+
+      const marker = L.marker(waypoint, { icon })
+        .addTo(mapRef.current!)
+        .bindPopup(`
+          <div class="text-sm">
+            <div class="mb-1">
+              <span style="font-weight: 600;">Waypoint ${index + 1}</span>
+            </div>
+            <div class="text-xs text-gray-600 font-mono">
+              ${waypoint[0].toFixed(6)}°, ${waypoint[1].toFixed(6)}°
+            </div>
+          </div>
+        `);
+
+      waypointMarkersRef.current.push(marker);
+    });
+
+    // Add waypoint path
+    if (waypoints.length > 1) {
+      const polyline = L.polyline(waypoints, {
+        color: "#ef4444",
+        weight: 2,
+        opacity: 0.7,
+        dashArray: "5, 10",
+      }).addTo(mapRef.current);
+      waypointPolylineRef.current = polyline;
+    }
+  }, [waypoints]);
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="bg-white border-b border-gray-200 p-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 flex-1">
+          <button
+            onClick={() => setAddWaypointMode(!addWaypointMode)}
+            className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
+              addWaypointMode
+                ? "bg-blue-600 text-white"
+                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+            }`}
+          >
+            <MapPin className="size-4" />
+            {addWaypointMode ? "Click Map to Add" : "Add Waypoint"}
+          </button>
+          <button
+            onClick={onClearWaypoints}
+            disabled={waypoints.length === 0}
+            className="px-4 py-2 rounded-lg flex items-center gap-2 bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <Trash2 className="size-4" />
+            Clear
+          </button>
+          <button
+            onClick={onSendWaypoints}
+            disabled={waypoints.length === 0}
+            className="px-4 py-2 rounded-lg flex items-center gap-2 bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <Send className="size-4" />
+            Send to USV ({waypoints.length})
+          </button>
+        </div>
+        <div className="text-sm text-gray-600">
+          <span className="font-mono">
+            {usvPosition[0].toFixed(6)}°, {usvPosition[1].toFixed(6)}°
+          </span>
+        </div>
+      </div>
+
+      <div className="flex-1 relative">
+        <div ref={mapContainerRef} className="h-full w-full" />
+        
+        {/* Heading Indicator Overlay */}
+        <div className="absolute top-4 left-4 bg-white rounded-lg shadow-lg p-4 border border-gray-200">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="size-16 rounded-full border-2 border-gray-300 flex items-center justify-center">
+                <Navigation
+                  className="size-6 text-blue-600"
+                  style={{ transform: `rotate(${heading}deg)` }}
+                />
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-600 mb-1">Heading</div>
+              <div className="text-2xl text-gray-900">{Math.round(heading)}°</div>
+              <div className="text-xs text-gray-500 mt-1">
+                {heading >= 337.5 || heading < 22.5 ? 'N' :
+                 heading >= 22.5 && heading < 67.5 ? 'NE' :
+                 heading >= 67.5 && heading < 112.5 ? 'E' :
+                 heading >= 112.5 && heading < 157.5 ? 'SE' :
+                 heading >= 157.5 && heading < 202.5 ? 'S' :
+                 heading >= 202.5 && heading < 247.5 ? 'SW' :
+                 heading >= 247.5 && heading < 292.5 ? 'W' : 'NW'}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Path History Info */}
+        <div className="absolute top-4 right-4 bg-white rounded-lg shadow-lg p-3 border border-gray-200">
+          <div className="text-xs text-gray-600 mb-1">Path History</div>
+          <div className="flex items-center gap-2">
+            <div className="size-3 rounded-full bg-blue-500"></div>
+            <span className="text-sm text-gray-900">{trail.length} points</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
