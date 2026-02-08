@@ -2,3 +2,37 @@
 @source '../**/*.{js,ts,jsx,tsx}';
 
 @import 'tw-animate-css';
+
+@layer utilities {
+    @keyframes pulse-red {
+
+        0%,
+        100% {
+            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+        }
+
+        50% {
+            box-shadow: 0 0 20px 10px rgba(239, 68, 68, 0.1);
+        }
+    }
+
+    @keyframes pulse-yellow {
+
+        0%,
+        100% {
+            box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.4);
+        }
+
+        50% {
+            box-shadow: 0 0 20px 10px rgba(234, 179, 8, 0.1);
+        }
+    }
+
+    .animate-pulse-red {
+        animation: pulse-red 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+
+    .animate-pulse-yellow {
+        animation: pulse-yellow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+}

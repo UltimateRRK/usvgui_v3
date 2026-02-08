@@ -3,10 +3,10 @@ import L from "leaflet";
 import { MapPin, Trash2, Send, Navigation } from "lucide-react";
 import "leaflet/dist/leaflet.css";
 import { Mission } from "../../types/mission";
+import { VehiclePosition } from "../../types/bridge";
 
 interface MapViewProps {
-  usvPosition: [number, number];
-  heading: number;
+  vehiclePosition: VehiclePosition | null;
   trail: [number, number][];
   mission: Mission;
   onAddWaypoint: (position: [number, number]) => void;
@@ -17,8 +17,7 @@ interface MapViewProps {
 }
 
 export function MapView({
-  usvPosition,
-  heading,
+  vehiclePosition,
   trail,
   mission,
   onAddWaypoint,
@@ -38,7 +37,9 @@ export function MapView({
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
 
-    const map = L.map(mapContainerRef.current).setView(usvPosition, 15);
+    // Default center (will be updated when telemetry arrives)
+    const defaultCenter: [number, number] = [15.4909, 73.8278]; // Mandovi River, Goa
+    const map = L.map(mapContainerRef.current).setView(defaultCenter, 15);
     mapRef.current = map;
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -70,13 +71,22 @@ export function MapView({
     });
   }, [addWaypointMode, onAddWaypoint]);
 
-  // Update USV marker
+  // Update USV marker from vehicle telemetry
   useEffect(() => {
     if (!mapRef.current) return;
 
+    // Remove existing marker if no telemetry
+    if (!vehiclePosition) {
+      if (usvMarkerRef.current) {
+        mapRef.current.removeLayer(usvMarkerRef.current);
+        usvMarkerRef.current = null;
+      }
+      return;
+    }
+
     const boatIcon = L.divIcon({
       html: `
-        <div style="transform: rotate(${heading}deg);">
+        <div style="transform: rotate(${vehiclePosition.heading}deg);">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M3 18L6 12L12 15L18 12L21 18M12 3V12M12 3L9 6M12 3L15 6" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
@@ -87,27 +97,52 @@ export function MapView({
       iconAnchor: [16, 16],
     });
 
+    const position: [number, number] = [vehiclePosition.lat, vehiclePosition.lon];
+
+    // Check if this is the first telemetry (marker doesn't exist yet)
+    const isFirstTelemetry = !usvMarkerRef.current;
+
     if (usvMarkerRef.current) {
-      usvMarkerRef.current.setLatLng(usvPosition);
+      usvMarkerRef.current.setLatLng(position);
+      usvMarkerRef.current.setIcon(boatIcon);
     } else {
-      const marker = L.marker(usvPosition, { icon: boatIcon })
+      const marker = L.marker(position, { icon: boatIcon })
         .addTo(mapRef.current)
         .bindPopup(`
           <div class="text-sm">
             <div class="flex items-center gap-2 mb-1">
-              <span style="font-weight: 600;">USV Current Position</span>
+              <span style="font-weight: 600;">USV Live Position</span>
             </div>
             <div class="text-xs text-gray-600 font-mono">
-              ${usvPosition[0].toFixed(6)}°, ${usvPosition[1].toFixed(6)}°
+              ${vehiclePosition.lat.toFixed(6)}°, ${vehiclePosition.lon.toFixed(6)}°
+            </div>
+            <div class="text-xs text-gray-600 mt-1">
+              Heading: ${Math.round(vehiclePosition.heading)}°
+            </div>
+            <div class="text-xs text-gray-600">
+              Speed: ${vehiclePosition.groundspeed.toFixed(1)} m/s
             </div>
           </div>
         `);
       usvMarkerRef.current = marker;
     }
 
-    // Center map on USV position
-    mapRef.current.setView(usvPosition, mapRef.current.getZoom());
-  }, [usvPosition, heading]);
+    // Smart centering: only recenter if needed
+    // - First telemetry: center immediately
+    // - Subsequent updates: only if vehicle is outside viewport
+    if (isFirstTelemetry) {
+      // First telemetry: center map on vehicle
+      mapRef.current.setView(position, mapRef.current.getZoom());
+    } else {
+      // Check if vehicle is outside viewport bounds
+      const bounds = mapRef.current.getBounds();
+      if (!bounds.contains(position)) {
+        // Vehicle outside viewport: smoothly pan to position
+        mapRef.current.panTo(position);
+      }
+      // Otherwise: vehicle still in viewport, no recentering needed
+    }
+  }, [vehiclePosition]);
 
   // Update trail
   useEffect(() => {
@@ -194,8 +229,8 @@ export function MapView({
           <button
             onClick={() => setAddWaypointMode(!addWaypointMode)}
             className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${addWaypointMode
-                ? "bg-blue-600 text-white"
-                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              ? "bg-blue-600 text-white"
+              : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
           >
             <MapPin className="size-4" />
@@ -219,9 +254,18 @@ export function MapView({
           </button>
         </div>
         <div className="text-sm text-gray-600">
-          <span className="font-mono">
-            {usvPosition[0].toFixed(6)}°, {usvPosition[1].toFixed(6)}°
-          </span>
+          {vehiclePosition ? (
+            <>
+              <span className="font-mono">
+                {vehiclePosition.lat.toFixed(6)}°, {vehiclePosition.lon.toFixed(6)}°
+              </span>
+              <span className="ml-2 text-xs">
+                {vehiclePosition.groundspeed.toFixed(1)} m/s
+              </span>
+            </>
+          ) : (
+            <span className="text-xs italic">No telemetry</span>
+          )}
         </div>
       </div>
 
@@ -229,31 +273,33 @@ export function MapView({
         <div ref={mapContainerRef} className="h-full w-full" />
 
         {/* Heading Indicator Overlay */}
-        <div className="absolute top-4 left-4 bg-white rounded-lg shadow-lg p-4 border border-gray-200">
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <div className="size-16 rounded-full border-2 border-gray-300 flex items-center justify-center">
-                <Navigation
-                  className="size-6 text-blue-600"
-                  style={{ transform: `rotate(${heading}deg)` }}
-                />
+        {vehiclePosition && (
+          <div className="absolute top-4 left-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <div className="size-16 rounded-full border-2 border-gray-300 dark:border-gray-600 flex items-center justify-center">
+                  <Navigation
+                    className="size-6 text-blue-600 dark:text-blue-400"
+                    style={{ transform: `rotate(${vehiclePosition.heading}deg)` }}
+                  />
+                </div>
               </div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-600 mb-1">Heading</div>
-              <div className="text-2xl text-gray-900">{Math.round(heading)}°</div>
-              <div className="text-xs text-gray-500 mt-1">
-                {heading >= 337.5 || heading < 22.5 ? 'N' :
-                  heading >= 22.5 && heading < 67.5 ? 'NE' :
-                    heading >= 67.5 && heading < 112.5 ? 'E' :
-                      heading >= 112.5 && heading < 157.5 ? 'SE' :
-                        heading >= 157.5 && heading < 202.5 ? 'S' :
-                          heading >= 202.5 && heading < 247.5 ? 'SW' :
-                            heading >= 247.5 && heading < 292.5 ? 'W' : 'NW'}
+              <div>
+                <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Heading</div>
+                <div className="text-2xl text-gray-900 dark:text-gray-100">{Math.round(vehiclePosition.heading)}°</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  {vehiclePosition.heading >= 337.5 || vehiclePosition.heading < 22.5 ? 'N' :
+                    vehiclePosition.heading >= 22.5 && vehiclePosition.heading < 67.5 ? 'NE' :
+                      vehiclePosition.heading >= 67.5 && vehiclePosition.heading < 112.5 ? 'E' :
+                        vehiclePosition.heading >= 112.5 && vehiclePosition.heading < 157.5 ? 'SE' :
+                          vehiclePosition.heading >= 157.5 && vehiclePosition.heading < 202.5 ? 'S' :
+                            vehiclePosition.heading >= 202.5 && vehiclePosition.heading < 247.5 ? 'SW' :
+                              vehiclePosition.heading >= 247.5 && vehiclePosition.heading < 292.5 ? 'W' : 'NW'}
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Path History Info */}
         <div className="absolute top-4 right-4 bg-white rounded-lg shadow-lg p-3 border border-gray-200">

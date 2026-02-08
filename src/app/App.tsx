@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { Toaster } from "sonner";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { Mission, createEmptyMission, addWaypointToMission } from "../types/mission";
+import { VehiclePosition } from "../types/bridge";
 
 
 interface SensorData {
@@ -76,19 +77,21 @@ export default function App() {
   const [sensorData, setSensorData] = useState<SensorData>(generateSensorData());
   const [waterQuality, setWaterQuality] = useState<"good" | "moderate" | "poor">("good");
 
-  // USV position and navigation
-  const [usvPosition, setUsvPosition] = useState<[number, number]>([15.4909, 73.8278]); // Mandovi River, Panaji, Goa
-  const [trail, setTrail] = useState<[number, number][]>([[15.4909, 73.8278]]);
+  // Vehicle telemetry (from bridge)
+  const [vehiclePosition, setVehiclePosition] = useState<VehiclePosition | null>(null);
+  const [trail, setTrail] = useState<[number, number][]>([]);
+
+  // Mission planning
   const [mission, setMission] = useState<Mission>(createEmptyMission());
   const [addWaypointMode, setAddWaypointMode] = useState(false);
-  const [heading, setHeading] = useState(0); // Heading in degrees (0-360)
 
   // Expose mission in dev mode for debugging
   useEffect(() => {
     if (import.meta.env.DEV) {
       (window as any).currentMission = mission;
+      (window as any).vehiclePosition = vehiclePosition;
     }
-  }, [mission]);
+  }, [mission, vehiclePosition]);
 
   // Chart data
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
@@ -138,29 +141,42 @@ export default function App() {
     return () => clearInterval(interval);
   }, [sensorInterval]);
 
-  // Simulate USV movement
+  // Subscribe to bridge telemetry (live vehicle position)
+  // TODO: Replace with actual bridge implementation when available
   useEffect(() => {
-    const interval = setInterval(() => {
-      setUsvPosition(prev => {
-        // Small random movement to simulate navigation
-        const newLat = prev[0] + (Math.random() - 0.5) * 0.0005;
-        const newLng = prev[1] + (Math.random() - 0.5) * 0.0005;
-        const newPos: [number, number] = [newLat, newLng];
+    // Simulated bridge.onPosition subscription
+    // In production, replace with: const unsubscribe = bridge.onPosition(handlePositionUpdate);
 
-        // Calculate heading based on movement direction
-        const latDiff = newLat - prev[0];
-        const lngDiff = newLng - prev[1];
-        const newHeading = (Math.atan2(lngDiff, latDiff) * 180 / Math.PI + 90 + 360) % 360;
-        setHeading(newHeading);
+    const handlePositionUpdate = (pos: VehiclePosition) => {
+      setVehiclePosition(pos);
 
-        // Update trail (keep last 50 positions)
-        setTrail(prevTrail => [...prevTrail.slice(-49), newPos]);
-
-        return newPos;
+      // Update trail with capped length (last 300 points)
+      setTrail(prevTrail => {
+        const newTrail = [...prevTrail, [pos.lat, pos.lon] as [number, number]];
+        // Cap at 300 positions to prevent memory bloat
+        return newTrail.slice(-300);
       });
-    }, 3000); // Move every 3 seconds
+    };
 
-    return () => clearInterval(interval);
+    // Simulate telemetry updates (remove in production)
+    const interval = setInterval(() => {
+      const now = new Date();
+      const simulatedPos: VehiclePosition = {
+        lat: 15.4909 + (Math.random() - 0.5) * 0.001,
+        lon: 73.8278 + (Math.random() - 0.5) * 0.001,
+        alt: 0, // USV always at surface level
+        heading: Math.random() * 360,
+        groundspeed: 1.5 + Math.random() * 0.5,
+        timestamp: now.toISOString(),
+      };
+      handlePositionUpdate(simulatedPos);
+    }, 2000);
+
+    // Cleanup
+    return () => {
+      clearInterval(interval);
+      // In production: unsubscribe();
+    };
   }, []);
 
   // Initialize chart data
@@ -239,8 +255,7 @@ export default function App() {
             {/* Left Panel - Map */}
             <div className="lg:col-span-3 bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
               <MapView
-                usvPosition={usvPosition}
-                heading={heading}
+                vehiclePosition={vehiclePosition}
                 trail={trail}
                 mission={mission}
                 onAddWaypoint={handleAddWaypoint}
