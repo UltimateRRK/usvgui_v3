@@ -1,9 +1,10 @@
 import { CheckCircle, XCircle, Clock, MapPin } from "lucide-react";
+import { Mission } from "../../types/mission";
 
 export interface MissionLogEntry {
   id: string;
   timestamp: string;
-  waypoints: [number, number][];
+  mission: Mission;
   waypointCount: number;
   status: "Accepted" | "Rejected" | "Pending";
   message?: string;
@@ -37,10 +38,10 @@ export function MissionLog({ missions }: MissionLogProps) {
             <div
               key={mission.id}
               className={`border rounded-lg p-4 ${mission.status === "Accepted"
-                  ? "bg-green-50 border-green-200"
-                  : mission.status === "Rejected"
-                    ? "bg-red-50 border-red-200"
-                    : "bg-yellow-50 border-yellow-200"
+                ? "bg-green-50 border-green-200"
+                : mission.status === "Rejected"
+                  ? "bg-red-50 border-red-200"
+                  : "bg-yellow-50 border-yellow-200"
                 }`}
             >
               <div className="flex items-start justify-between mb-2">
@@ -90,14 +91,14 @@ export function MissionLog({ missions }: MissionLogProps) {
               <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
                 <div className="text-xs text-gray-600 dark:text-gray-400 mb-2">Waypoint Coordinates:</div>
                 <div className="space-y-1 max-h-24 overflow-y-auto">
-                  {mission.waypoints.slice(0, 3).map((wp, idx) => (
-                    <div key={idx} className="text-xs font-mono text-gray-700 dark:text-gray-300">
-                      {idx + 1}. {wp[0].toFixed(6)}°, {wp[1].toFixed(6)}°
+                  {mission.mission.waypoints.slice(0, 3).map((wp) => (
+                    <div key={wp.seq} className="text-xs font-mono text-gray-700 dark:text-gray-300">
+                      {wp.seq + 1}. {wp.x.toFixed(6)}°, {wp.y.toFixed(6)}°
                     </div>
                   ))}
-                  {mission.waypoints.length > 3 && (
+                  {mission.mission.waypoints.length > 3 && (
                     <div className="text-xs text-gray-500 italic">
-                      +{mission.waypoints.length - 3} more waypoints
+                      +{mission.mission.waypoints.length - 3} more waypoints
                     </div>
                   )}
                 </div>

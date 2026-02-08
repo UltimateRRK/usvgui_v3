@@ -50,7 +50,7 @@ export function USVHealthStrip({
 
     return (
         <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-3">
-            <div className="flex items-center justify-center flex-wrap gap-6">
+            <div className="flex items-center justify-center flex-wrap gap-10">
                 {/* Connection Status */}
                 <div className="flex items-center gap-2">
                     <div className={getConnectionColor()}>

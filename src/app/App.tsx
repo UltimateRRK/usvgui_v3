@@ -13,6 +13,7 @@ import { USVHealthStrip } from "./components/USVHealthStrip";
 import { toast } from "sonner";
 import { Toaster } from "sonner";
 import { ThemeProvider } from "./components/ThemeProvider";
+import { Mission, createEmptyMission, addWaypointToMission } from "../types/mission";
 
 
 interface SensorData {
@@ -78,9 +79,16 @@ export default function App() {
   // USV position and navigation
   const [usvPosition, setUsvPosition] = useState<[number, number]>([15.4909, 73.8278]); // Mandovi River, Panaji, Goa
   const [trail, setTrail] = useState<[number, number][]>([[15.4909, 73.8278]]);
-  const [waypoints, setWaypoints] = useState<[number, number][]>([]);
+  const [mission, setMission] = useState<Mission>(createEmptyMission());
   const [addWaypointMode, setAddWaypointMode] = useState(false);
   const [heading, setHeading] = useState(0); // Heading in degrees (0-360)
+
+  // Expose mission in dev mode for debugging
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      (window as any).currentMission = mission;
+    }
+  }, [mission]);
 
   // Chart data
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
@@ -169,18 +177,18 @@ export default function App() {
   }, []);
 
   const handleAddWaypoint = (position: [number, number]) => {
-    setWaypoints(prev => [...prev, position]);
+    setMission(prev => addWaypointToMission(prev, position[0], position[1]));
     setAddWaypointMode(false);
-    toast.success(`Waypoint ${waypoints.length + 1} added`);
+    toast.success(`Waypoint ${mission.waypoints.length + 1} added`);
   };
 
   const handleClearWaypoints = () => {
-    setWaypoints([]);
+    setMission(createEmptyMission());
     toast.info("Waypoints cleared");
   };
 
   const handleSendWaypoints = () => {
-    if (waypoints.length > 0) {
+    if (mission.waypoints.length > 0) {
       // Create mission log entry
       const missionEntry: MissionLogEntry = {
         id: Date.now().toString(),
@@ -192,17 +200,17 @@ export default function App() {
           minute: '2-digit',
           second: '2-digit',
         }),
-        waypoints: [...waypoints],
-        waypointCount: waypoints.length,
+        mission: mission,
+        waypointCount: mission.waypoints.length,
         status: Math.random() > 0.2 ? "Accepted" : "Rejected", // Simulate 80% acceptance rate
         message: Math.random() > 0.2
-          ? `Mission accepted. USV will navigate to ${waypoints.length} waypoint${waypoints.length !== 1 ? 's' : ''}.`
+          ? `Mission accepted. USV will navigate to ${mission.waypoints.length} waypoint${mission.waypoints.length !== 1 ? 's' : ''}.`
           : "Mission rejected. Waypoint path exceeds safe navigation parameters.",
       };
 
       setMissionLog(prev => [missionEntry, ...prev]);
 
-      toast.success(`${waypoints.length} waypoints sent to USV via Pixhawk`);
+      toast.success(`${mission.waypoints.length} waypoints sent to USV via Pixhawk`);
       // In a real implementation, this would send waypoints to the backend
     }
   };
@@ -234,7 +242,7 @@ export default function App() {
                 usvPosition={usvPosition}
                 heading={heading}
                 trail={trail}
-                waypoints={waypoints}
+                mission={mission}
                 onAddWaypoint={handleAddWaypoint}
                 onClearWaypoints={handleClearWaypoints}
                 onSendWaypoints={handleSendWaypoints}
